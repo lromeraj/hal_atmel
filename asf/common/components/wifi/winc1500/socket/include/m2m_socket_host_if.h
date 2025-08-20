@@ -4,36 +4,29 @@
  *
  * \brief BSD compatible socket interface internal types.
  *
- * Copyright (c) 2016-2017 Atmel Corporation. All rights reserved.
+ * Copyright (c) 2016-2021 Microchip Technology Inc. and its subsidiaries.
  *
  * \asf_license_start
  *
  * \page License
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
+ * Subject to your compliance with these terms, you may use Microchip
+ * software and any derivatives exclusively with Microchip products.
+ * It is your responsibility to comply with third party license terms applicable
+ * to your use of third party software (including open source software) that
+ * may accompany Microchip software.
  *
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- *    this list of conditions and the following disclaimer in the documentation
- *    and/or other materials provided with the distribution.
- *
- * 3. The name of Atmel may not be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY ATMEL "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT ARE
- * EXPRESSLY AND SPECIFICALLY DISCLAIMED. IN NO EVENT SHALL ATMEL BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS SUPPLIED BY MICROCHIP "AS IS". NO WARRANTIES,
+ * WHETHER EXPRESS, IMPLIED OR STATUTORY, APPLY TO THIS SOFTWARE,
+ * INCLUDING ANY IMPLIED WARRANTIES OF NON-INFRINGEMENT, MERCHANTABILITY,
+ * AND FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT WILL MICROCHIP BE
+ * LIABLE FOR ANY INDIRECT, SPECIAL, PUNITIVE, INCIDENTAL OR CONSEQUENTIAL
+ * LOSS, DAMAGE, COST OR EXPENSE OF ANY KIND WHATSOEVER RELATED TO THE
+ * SOFTWARE, HOWEVER CAUSED, EVEN IF MICROCHIP HAS BEEN ADVISED OF THE
+ * POSSIBILITY OR THE DAMAGES ARE FORESEEABLE.  TO THE FULLEST EXTENT
+ * ALLOWED BY LAW, MICROCHIP'S TOTAL LIABILITY ON ALL CLAIMS IN ANY WAY
+ * RELATED TO THIS SOFTWARE WILL NOT EXCEED THE AMOUNT OF FEES, IF ANY,
+ * THAT YOU HAVE PAID DIRECTLY TO MICROCHIP FOR THIS SOFTWARE.
  *
  * \asf_license_stop
  *
@@ -72,11 +65,23 @@ MACROS
 
 #define SSL_MAX_OPT_LEN						HOSTNAME_MAX_SIZE
 
-
+#define ALPN_LIST_MIN_SIZE			4
+#define ALPN_LIST_MAX_SIZE			32
+/*!< 
+	Maximum length of ALPN list that can be specified by the application.
+	The list is in the following format:
+	@verbatim
+	0       1       2       3 ... (bytes)
+	+-------+-------+-------+  ...        +-------+  ...        +-------+  ...
+	| Length L (BE) | len1  | name1...    | len2  | name2...    | len3  | name3...
+	+-------+-------+-------+  ...        +-------+  ...        +-------+  ...
+	Length fields do not include themselves.
+	@endverbatim
+*/
 
 #define SOCKET_CMD_INVALID					0x00
 /*!< 
-	Invlaid Socket command value.
+	Invalid Socket command value.
 */
 
 
@@ -112,7 +117,7 @@ MACROS
 
 #define SOCKET_CMD_RECV						0x46
 /*!< 
-	Socket Recieve command value.
+	Socket Receive command value.
 */
 
 
@@ -124,7 +129,7 @@ MACROS
 
 #define SOCKET_CMD_RECVFROM					0x48
 /*!< 
-	Socket RecieveFrom command value.
+	Socket ReceiveFrom command value.
 */
 
 
@@ -154,7 +159,7 @@ MACROS
 
 #define SOCKET_CMD_SSL_RECV					0x4D
 /*!< 
-	SSL-Socket Recieve command value.
+	SSL-Socket Receive command value.
 */
 
 
@@ -201,6 +206,16 @@ MACROS
 /*!<
 */
 
+
+#define SOCKET_CMD_SECURE					0x56
+/*!<
+	Make secure a previously opened socket.
+*/
+
+#define SOCKET_CMD_SSL_CONNECT_ALPN			0x57
+/*!< 
+	SSL-Socket Connect with ALPN command value.
+*/
 
 
 #define PING_ERR_SUCCESS					0
@@ -325,12 +340,47 @@ typedef struct{
 typedef struct{
 	SOCKET		sock;
 	sint8		s8Error;
-	uint16		u16AppDataOffset;
 	/*!<
-		In further packet send requests the host interface should put the user application
-		data at this offset in the allocated shared data packet.
+		0 for successful connection, in which case u16AppDataOffset is valid.
+		Negative for failed connection, in which case u8ErrorType and u8ErrorDetail may give more info.
 	*/
+	union {
+		uint16		u16AppDataOffset;
+		/*!<
+			In further packet send requests the host interface should put the user application
+			data at this offset in the allocated shared data packet.
+		*/
+		struct {
+			uint8   u8ErrSource;
+			/*!<
+				0: No detail
+				1: TLS Alert received from peer
+				2: TLS Alert generated locally
+			*/
+			uint8   u8ErrCode;
+			/*!<
+				For TLS Alerts, this is the Alert ID.
+			*/
+		};
+	};
 }tstrConnectReply;
+
+
+/*!
+@struct	\
+	tstrConnectAlpnReply
+	
+@brief
+	Connect Reply, contains sock number, error value and index of negotiated application protocol.
+*/
+typedef struct{
+	tstrConnectReply	strConnReply;
+	uint8				u8AppProtocolIdx;
+	/*!<
+		1-based index of application-layer protocol negotiated during TLS handshake.
+	*/
+	uint8		__PAD24__[3];
+}tstrConnectAlpnReply;
 
 
 /*!
@@ -370,11 +420,13 @@ typedef struct{
 	SOCKET		sock;
 	uint8		u8Void;
 	uint16		u16SessionID;
+    uint16      u16BufLen;
 }tstrRecvCmd;
 
 
 /*!
-@struct
+@struct \
+  tstrRecvReply
 @brief
 */
 typedef struct{
